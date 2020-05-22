@@ -107,6 +107,8 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
         putText(topviewImg, str1, cv::Point2f(left-250, bottom+50), cv::FONT_ITALIC, 2, currColor);
         sprintf(str2, "xmin=%2.2f m, yw=%2.2f m", xwmin, ywmax-ywmin);
         putText(topviewImg, str2, cv::Point2f(left-250, bottom+125), cv::FONT_ITALIC, 2, currColor);  
+
+        // cout << "id=" << it1->boxID << " #pts= " << (int)it1->lidarPoints.size() <<  " xmin= " << xwmin << std::endl;
     }
 
     // plot distance markers
@@ -120,7 +122,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
     // display image
     string windowName = "3D Objects";
-    cv::namedWindow(windowName, 1);
+    cv::namedWindow(windowName, cv::WINDOW_NORMAL);
     cv::imshow(windowName, topviewImg);
 
     if(bWait)
@@ -144,15 +146,141 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
     // ...
 }
 
+void clusterHelper(const int index,
+                   const std::vector<std::vector<double>> &points,
+                   std::vector<int> &cluster, std::vector<bool> &processed,
+                   const KdTree *tree, const float distanceTol)
+{
+    processed[index] = true;
+    cluster.push_back(index);
+
+    std::vector<int> nearest = tree->search(points[index], distanceTol);
+
+    for (int id : nearest)
+    {
+        if (!processed[id])
+            clusterHelper(id, points, cluster, processed, tree, distanceTol);
+    }
+}
+
+std::vector<std::vector<int>> euclideanCluster(const std::vector<std::vector<double>> &points, const KdTree *tree, const float distanceTol, const int minSize, const int maxSize)
+{
+    std::vector<std::vector<int>> clusters;
+    std::vector<bool> processed(points.size(), false);
+
+    for (int i = 0; i < points.size(); i++)
+    {
+        if (processed[i])
+        {
+            continue;
+        }
+
+        std::vector<int> cluster;
+        clusterHelper(i, points, cluster, processed, tree, distanceTol);
+
+        if (cluster.size() >= minSize)
+            clusters.push_back(cluster);
+
+        clusters.push_back(cluster);
+    }
+
+    return clusters;
+}
+
+std::vector<LidarPoint> getClusterPoints(std::vector<LidarPoint> &lidarPoints)
+{
+    const float distanceTolerance = 0.2;
+    const int minClusterSize = 5;
+    const int maxClusterSize = 500;
+
+    std::vector<LidarPoint> clusterPoints;
+    std::vector<std::vector<int>> clusters;
+    std::vector<std::vector<double>> pointsVector;
+
+    KdTree *tree = new KdTree();
+
+    // construct kd-tree
+    for (int index = 0; index < lidarPoints.size(); ++index)
+    {
+        const auto &point = lidarPoints[index];
+        tree->insert({point.x, point.y, point.z}, index);
+        pointsVector.push_back({point.x, point.y, point.z});
+    }
+
+    // cluster pointcloud
+    clusters = euclideanCluster(pointsVector, tree, distanceTolerance, minClusterSize, maxClusterSize);
+
+    // sort clusters with number of points
+    std::sort(clusters.begin(), clusters.end(),
+              [](const std::vector<int> &a, const std::vector<int> &b) {
+                  return a.size() > b.size();
+              });
+
+    // Test code
+    // cout << clusters.size() << " clusters: " << std::endl;
+    // for_each(clusters.begin(), clusters.end(),
+    //          [&](std::vector<int> &cluster) { cout << cluster.size() << std::endl; });
+
+    // return the points of the largest cluster
+    std::transform(clusters[0].begin(), clusters[0].end(), std::back_inserter(clusterPoints), [&lidarPoints](size_t pos) { return lidarPoints[pos]; });
+
+    return clusterPoints;
+}
 
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
                      std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
 {
-    // ...
-}
+    std::vector<LidarPoint> prevClusterPoints = getClusterPoints(lidarPointsPrev);
+    std::vector<LidarPoint> currClusterPoints = getClusterPoints(lidarPointsCurr);
 
+    auto closestPoint = std::min_element(prevClusterPoints.begin(), prevClusterPoints.end(), [](const LidarPoint &a, const LidarPoint &b) { return (a.x < b.x); });
+    double d0 = closestPoint->x;
+    closestPoint = std::min_element(currClusterPoints.begin(), currClusterPoints.end(), [](const LidarPoint &a, const LidarPoint &b) { return (a.x < b.x); });
+    double d1 = closestPoint->x;
+
+    // cout << "Prev: " << std::endl << "#pts = " << prevClusterPoints.size() << " xmin = "<< d0 << std::endl;
+    // cout << "curr: " << std::endl << "#pts = " << currClusterPoints.size() << " xmin = "<< d1 << std::endl;
+
+    TTC = d1 / (frameRate * (d0 - d1));
+}
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
 {
-    // ...
+    std::vector<std::pair<int, int>> bbMatches;
+
+    // loop on all matches and all bounding boxes of current and previous frames
+    // add their box ids to the bbox matches candidates map, if previous and current
+    // bounding boxes contains the previous and current keypoints
+    for (const auto &kptMatch : matches)
+    {
+        auto &prevKpt = prevFrame.keypoints.at(kptMatch.queryIdx);
+        auto &currKpt = currFrame.keypoints.at(kptMatch.trainIdx);
+        for (const auto &prevBBox : prevFrame.boundingBoxes)
+        {
+            if (prevBBox.roi.contains(prevKpt.pt))
+            {
+                for (const auto &currBBox : currFrame.boundingBoxes)
+                {
+                    if (currBBox.roi.contains(currKpt.pt))
+                    {
+                        bbMatches.push_back({prevBBox.boxID, currBBox.boxID});
+                    }
+                }
+            }
+        }
+    }
+
+    // sort the box matches map to the number of correspondances
+    std::vector<std::pair<int, int>> sorted_bbMatches(bbMatches.size());
+
+    std::partial_sort_copy(
+        bbMatches.begin(), bbMatches.end(), sorted_bbMatches.begin(),
+        sorted_bbMatches.end(),
+        [&bbMatches](std::pair<int, int> elem, std::pair<int, int> other) {
+            return std::count(bbMatches.begin(), bbMatches.end(), elem) >
+                   std::count(bbMatches.begin(), bbMatches.end(), other);
+        });
+
+    // return map of highest correspondance bbox matches
+    std::copy(sorted_bbMatches.begin(), sorted_bbMatches.end(), std::inserter(bbBestMatches, bbBestMatches.begin()));
 }
