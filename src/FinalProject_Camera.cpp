@@ -25,9 +25,45 @@ using namespace std;
 /* MAIN PROGRAM */
 int main(int argc, const char *argv[])
 {
+    // ///////////////// START OF EVALUATION CODE //////////////
+    // // Uncomment the code block below to run all detectors descriptors evaluation
+    // //
+    // // Create an output filestream object
+    // std::ofstream result;
+    // //set it write and append mode
+    // result.open("../results.csv", std::fstream::out | std::fstream::app);
+    // // Send the column header names to the created csv file
+    // result << "ImgID"
+    //        << ","
+    //        << "Detector"
+    //        << ","
+    //        << "Descriptor"
+    //        << ","
+    //        << "TTCLidar(s)"
+    //        << ","
+    //        << "TTCCamera(s)"
+    //        << ","
+    //        << "Xmin(m)"
+    //        << "," << endl;
+
+    // // Different combinations used for evaluation
+    // std::string detectors[7] = {"SHITOMASI", "HARRIS", "FAST", "BRISK", "ORB", "AKAZE", "SIFT"};
+    // std::string descriptors[5] = {"BRIEF", "ORB", "FREAK", "AKAZE", "SIFT"};
+
+    // for (const string &detectorType : detectors)
+    // {
+    //     for (const string &descriptor : descriptors)
+    //     {
+    //         // Skip incompatible detector / descriptor pair
+    //         if (((descriptor.compare("AKAZE") == 0) && (detectorType.compare("AKAZE") != 0)) ||
+    //             ((descriptor.compare("ORB") == 0) && (detectorType.compare("SIFT") == 0)))
+    //         {
+    //             continue;
+    //         }
+    ///////////////// END OF EVALUATION CODE //////////////
+
     /* INIT VARIABLES AND DATA STRUCTURES */
-    double detectorTime = 0.0, descriptorTime = 0.0, totalTime = 0.0;
-    int totalKeypoints = 0, vehicleKeypoints = 0, matchedKeypoints = 0;
+    double detectorTime = 0.0, descriptorTime = 0.0;
 
     // data location
     string dataPath = "../";
@@ -76,6 +112,7 @@ int main(int argc, const char *argv[])
     RingBuffer<DataFrame, dataBufferSize> dataBuffer; // list of data frames which are held in memory at the same time
     bool bVis = false;            // visualize results
 
+    // Comment these 2 lines when running evaluation code of all detector-descriptor pairs
     std::string detectorType = "FAST"; //{"SHITOMASI", "HARRIS", "FAST", "BRISK", "ORB", "AKAZE", "SIFT"};
     std::string descriptor = "BRIEF";  //{"BRIEF", "ORB", "FREAK", "AKAZE", "SIFT"}
 
@@ -265,20 +302,8 @@ int main(int argc, const char *argv[])
                     //// STUDENT ASSIGNMENT
                     //// TASK FP.2 -> compute time-to-collision based on Lidar data (implement -> computeTTCLidar)
                     double ttcLidar; 
-                    computeTTCLidar(prevBB->lidarPoints, currBB->lidarPoints, sensorFrameRate, ttcLidar);
-
-                    // std::vector<LidarPoint> currClusterPoints = getClusterPoints(currBB->lidarPoints);
-                    // BoundingBox test = *currBB;
-                    // test.lidarPoints = currClusterPoints;
-                    // std::vector<BoundingBox> test_v= {test};
-                    // // Visualize 3D objects
-                    // bVis = true;
-                    // if (bVis)
-                    // {
-                    //     show3DObjects(test_v, cv::Size(4.0, 20.0), cv::Size(2000, 2000), true);
-                    // }
-                    // bVis = false;
-
+                    double xmin;
+                    computeTTCLidar(prevBB->lidarPoints, currBB->lidarPoints, sensorFrameRate, ttcLidar, xmin);
                     //// EOF STUDENT ASSIGNMENT
 
                     //// STUDENT ASSIGNMENT
@@ -308,12 +333,19 @@ int main(int argc, const char *argv[])
                     }
                     bVis = false;
 
+                    // EVALUATION CODE
+                    // result << imgIndex << "," << detectorType << "," << descriptor << "," << ttcLidar << "," << ttcCamera << "," << xmin << "," << endl;
+
                 } // eof TTC computation
             } // eof loop over all BB matches            
-
         }
 
     } // eof loop over all images
-
+    //This return has to be commented out during evaluation run
     return 0;
 }
+//     // EVALUATION CODE 
+//      }
+
+//      return 0;
+// }

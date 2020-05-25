@@ -108,7 +108,6 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
         sprintf(str2, "xmin=%2.2f m, yw=%2.2f m", xwmin, ywmax-ywmin);
         putText(topviewImg, str2, cv::Point2f(left-250, bottom+125), cv::FONT_ITALIC, 2, currColor);  
 
-        // cout << "id=" << it1->boxID << " #pts= " << (int)it1->lidarPoints.size() <<  " xmin= " << xwmin << std::endl;
     }
 
     // plot distance markers
@@ -266,11 +265,6 @@ std::vector<LidarPoint> getClusterPoints(std::vector<LidarPoint> &lidarPoints)
                   return a.size() > b.size();
               });
 
-    // Test code
-    // cout << clusters.size() << " clusters: " << std::endl;
-    // for_each(clusters.begin(), clusters.end(),
-    //          [&](std::vector<int> &cluster) { cout << cluster.size() << std::endl; });
-
     // return the points of the largest cluster
     std::transform(clusters[0].begin(), clusters[0].end(), std::back_inserter(clusterPoints), [&lidarPoints](size_t pos) { return lidarPoints[pos]; });
 
@@ -278,7 +272,7 @@ std::vector<LidarPoint> getClusterPoints(std::vector<LidarPoint> &lidarPoints)
 }
 
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
-                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
+                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC, double &xmin)
 {
     std::vector<LidarPoint> prevClusterPoints = getClusterPoints(lidarPointsPrev);
     std::vector<LidarPoint> currClusterPoints = getClusterPoints(lidarPointsCurr);
@@ -288,10 +282,9 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
     closestPoint = std::min_element(currClusterPoints.begin(), currClusterPoints.end(), [](const LidarPoint &a, const LidarPoint &b) { return (a.x < b.x); });
     double d1 = closestPoint->x;
 
-    // cout << "Prev: " << std::endl << "#pts = " << prevClusterPoints.size() << " xmin = "<< d0 << std::endl;
-    // cout << "curr: " << std::endl << "#pts = " << currClusterPoints.size() << " xmin = "<< d1 << std::endl;
-
     TTC = d1 / (frameRate * (d0 - d1));
+
+    xmin = d1;
 }
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
